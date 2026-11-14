@@ -481,6 +481,8 @@ details.tabela summary{cursor:pointer; font-weight:600; color:var(--accent); mar
 @media (max-width:600px){ .chart .c .val{font-size:9.5px} .chart{gap:3px} .minibar{display:none} th,td{padding-left:6px; padding-right:6px} }
 
 /* ---------- Contas Já ---------- */
+.var-sobe{color:var(--ok)!important} .var-desce{color:var(--warn)!important}
+.kpi.sobe .v{color:var(--ok)} .kpi.desce .v{color:var(--warn)}
 :root{--m-painel:#0B5C70; --m-areas:#B7791F; --m-prog:#7A3E8F; --m-estado:#1F6FE0}
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){--m-painel:#6CC7DE; --m-areas:#E6AE52; --m-prog:#C08AD4; --m-estado:#6EA8FF} }
 :root[data-theme="dark"]{--m-painel:#6CC7DE; --m-areas:#E6AE52; --m-prog:#C08AD4; --m-estado:#6EA8FF}
@@ -581,7 +583,7 @@ const DICAS = {
   fundeb: "<b>Fundeb</b> é o fundo que financia a educação básica. A prefeitura recebe do fundo e a União completa (“complementação”) onde o dinheiro é menor.",
   constitucionais: "<b>Repasses constitucionais:</b> dinheiro que a lei manda dividir com os municípios, como o FPM, o ITR (imposto rural), os royalties de petróleo e mineração e o salário-educação. Aparecem na área “Encargos especiais” do Portal.",
   periodo: "<b>Mesmo período</b> = os mesmos meses (de janeiro até o último mês fechado) em cada ano. Comparar um ano que ainda não acabou com o ano passado inteiro não vale.",
-  parcial: "<b>Mês em andamento.</b> O Portal ainda está recebendo os lançamentos do mês: o valor vai crescer. Por isso ele não entra na comparação.",
+  parcial: "<b>Mês incompleto.</b> O Portal publica os repasses aos poucos: o mês atual (e às vezes o anterior) chega com só uma parte dos valores e vai crescer nas próximas semanas. Por isso ele não entra na comparação.",
   outros: "<b>Outros favorecidos</b>: dinheiro federal que chegou ao município mas não foi para a prefeitura, como o repasse direto às escolas (PDDE) e entidades sem fins lucrativos.",
 };
 const T = (k, txt) => `<span class="tip" tabindex="0" data-tip="${k}">${txt}</span>`;
@@ -653,7 +655,7 @@ function escopo(estado){
 const nomeFunc = id => id === "28" ? "Repasses constitucionais (FPM, ITR, royalties…)" : (META.funcoes[id] || "Função " + id);
 const nomeAcao = id => META.acoes[id] || ("Ação " + id);
 function fonte(){
-  return `<p class="src">Fonte: Portal da Transparência (CGU), transferências do governo federal. Dados de ${MES[+META.meses[0].slice(5) - 1]}/${ANO0()} a ${MES[+META.meses.at(-1).slice(5) - 1]}/${META.meses.at(-1).slice(0, 4)}. Coletado em ${dd(META.coletado_em)}.${META.mes_parcial ? ` O mês ${MES[+META.mes_parcial.slice(5) - 1]}/${META.mes_parcial.slice(0, 4)} ainda está em andamento e não entra nas comparações.` : ""}</p>`;
+  return `<p class="src">Fonte: Portal da Transparência (CGU), transferências do governo federal. Dados de ${MES[+META.meses[0].slice(5) - 1]}/${ANO0()} a ${MES[+META.meses.at(-1).slice(5) - 1]}/${META.meses.at(-1).slice(0, 4)}. Coletado em ${dd(META.coletado_em)}.${META.pendentes?.length ? ` Ainda incompleto no Portal (não entra nas comparações): ${META.pendentes.map(p => MES[+p.slice(5) - 1] + "/" + p.slice(0, 4)).join(", ")}.` : ""}</p>`;
 }
 const AVISO = () => `<div class="aviso"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 4.5a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8zM10.5 11h3v7h-3z"/></svg>
   <div>Aqui está o que o governo federal ${T("repasse", "repassou")} à prefeitura, não o que ela gastou. Não inclui o dinheiro do estado (ICMS, IPVA), a arrecadação própria nem o Bolsa Família (pago direto às famílias). Comparação sempre no ${T("periodo", "mesmo período")} (${rotPeriodo()}).</div></div>`;
@@ -721,7 +723,8 @@ const COR_V = {painel: "var(--m-painel)", areas: "var(--m-areas)", programas: "v
 const cabecalho = (v, titulo, sub) => `<div class="vhead"><div class="vtit"><span class="ptile" style="--mc:${COR_V[v]}"><svg class="dico" aria-hidden="true"><use href="#d-${ICO_V[v]}"/></svg></span><div><h2>${titulo}</h2><p>${sub}</p></div></div></div>`;
 const semDados = () => `<div class="box"><p class="sem-dado">Os repasses deste estado ainda não foram coletados. Escolha outro estado (por enquanto, Mato Grosso).</p></div>`;
 function renderTudo(){ renderPainel(); renderAreas(); renderProgramas(); renderEstado(); }
-const kpiVar = (cur, prev, rot) => { const v = variacao(cur, prev); return `<div class="kpi ${v.num ? (cur > prev ? "sobe" : cur < prev ? "desce" : "") : ""}"><div class="k">Variação</div><div class="v">${v.num && v.txt !== "igual" ? v.txt : "–"}</div><div class="s">${v.num && v.txt !== "igual" ? (cur > prev ? "a mais" : "a menos") + " que no ano passado" : v.txt}</div></div>`; };
+const kpiVar = (cur, prev) => { const v = variacao(cur, prev); const pct = v.num && v.txt !== "igual";
+  return `<div class="kpi ${pct ? (cur > prev ? "sobe" : cur < prev ? "desce" : "") : ""}"><div class="k">Variação</div><div class="v">${pct ? v.txt : v.num ? "0%" : "–"}</div><div class="s">${pct ? (cur > prev ? "a mais" : "a menos") + " que no ano passado" : v.num ? "praticamente igual" : v.txt}</div></div>`; };
 const kpi = (k, v, s, cls = "", full = "") => `<div class="kpi ${cls}"><div class="k">${k}</div><div class="v" ${full ? `title="${esc(full)}"` : ""}>${v}</div><div class="s">${s}</div></div>`;
 
 /* ===================== painel ===================== */
@@ -734,15 +737,15 @@ function graficoAnos(e){
   }).join("")}</div>`;
 }
 function graficoMeses(e){
-  const ra = refAno(), pm = META.mes_parcial && +META.mes_parcial.slice(0, 4) === ra ? +META.mes_parcial.slice(5) : 0;
+  const ra = refAno(), pend = new Set((META.pendentes || []).filter(p => +p.slice(0, 4) === ra).map(p => +p.slice(5)));
   const v = (y, m) => e.t[idx(y, m)] ?? 0;
   const todos = [];
-  for (let m = 1; m <= 12; m++){ if (m <= refMes()) { todos.push(v(ra - 1, m), v(ra, m)); } else if (m === pm) todos.push(v(ra, m)); else todos.push(v(ra - 1, m)); }
+  for (let m = 1; m <= 12; m++){ if (m <= refMes()) { todos.push(v(ra - 1, m), v(ra, m)); } else if (pend.has(m)) todos.push(v(ra, m)); else todos.push(v(ra - 1, m)); }
   const max = Math.max(1, ...todos);
   const h = x => Math.max(x > 0 ? 2 : 0, Math.round(Math.max(x, 0) * 120 / max));
   return `<div class="mchart" role="img" aria-label="Repasses mês a mês, ${ra - 1} e ${ra}">${MES.map((nm, i) => {
-    const m = i + 1, a = v(ra - 1, m), b = v(ra, m), fut = m > refMes(), parc = fut && m === pm;
-    return `<div class="g ${parc ? "mes-ref" : ""}"><div class="bars"><i class="a" style="height:${parc ? 0 : h(a)}px" title="${nm}/${ra - 1}: ${R(a)}${parc ? " (não comparado: mês em andamento)" : ""}"></i><i class="b ${parc ? "parc" : ""}" style="height:${fut && !parc ? 0 : h(b)}px" title="${nm}/${ra}: ${fut && !parc ? "ainda não chegou" : R(b) + (parc ? " (em andamento)" : "")}"></i></div><b>${nm}</b></div>`;
+    const m = i + 1, a = v(ra - 1, m), b = v(ra, m), fut = m > refMes(), parc = fut && pend.has(m);
+    return `<div class="g ${parc ? "mes-ref" : ""}"><div class="bars"><i class="a" style="height:${parc ? 0 : h(a)}px" title="${nm}/${ra - 1}: ${R(a)}${parc ? " (não comparado: ainda incompleto no Portal)" : ""}"></i><i class="b ${parc ? "parc" : ""}" style="height:${fut && !parc ? 0 : h(b)}px" title="${nm}/${ra}: ${fut && !parc ? "ainda não chegou" : R(b) + (parc ? " (ainda incompleto no Portal)" : "")}"></i></div><b>${nm}</b></div>`;
   }).join("")}</div>`;
 }
 function tabelaProgramas(e, limite){
@@ -766,12 +769,12 @@ function renderPainel(){
       ${kpi(`Recebido em ${ra}`, RC(cur), rotPeriodo(), "fogo", R(cur))}
       ${kpi(`Mesmo período de ${ra - 1}`, RC(prev), rotPeriodo(), "", R(prev))}
       ${kpiVar(cur, prev)}
-      ${kpi("Último mês fechado", RC(ult), `${MES[refMes() - 1]}/${ra}`, "", R(ult))}
+      ${kpi("Último mês completo", RC(ult), `${MES[refMes() - 1]}/${ra}`, "", R(ult))}
     </div>
     <div class="box"><h3>Mesmo período, ano a ano <small>${rotPeriodo()}, em reais</small></h3>${graficoAnos(e)}
       <div class="leg-pt"><span><i style="background:var(--fogo)"></i>${ra}</span><span><i style="background:var(--accent)"></i>${ra - 1}</span><span><i style="background:var(--verde-ano)"></i>anos anteriores</span></div></div>
     <div class="box"><h3>Mês a mês <small>${ra - 1} × ${ra}</small></h3>${graficoMeses(e)}
-      <div class="leg-pt"><span><i style="background:var(--accent)"></i>${ra - 1}</span><span><i style="background:var(--fogo)"></i>${ra}</span>${META.mes_parcial ? `<span>${T("parcial", "Listrado = mês em andamento")}</span>` : ""}</div></div>
+      <div class="leg-pt"><span><i style="background:var(--accent)"></i>${ra - 1}</span><span><i style="background:var(--fogo)"></i>${ra}</span>${(META.pendentes || []).some(p => +p.slice(0, 4) === ra) ? `<span>${T("parcial", "Listrado = mês ainda incompleto")}</span>` : ""}</div></div>
     <div class="box"><h3>Maiores repasses <small>${rotPeriodo()}</small></h3>${tabelaProgramas(e, 5)}
       <p class="acoes"><button type="button" class="btn peq" data-ir="programas">Ver todos os programas</button></p></div>
     ${outros || outrosP ? `<div class="box"><h3>${T("outros", "Outros favorecidos")} no município <small>${rotPeriodo()}</small></h3>

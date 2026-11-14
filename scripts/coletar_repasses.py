@@ -8,8 +8,10 @@ Fonte: arquivo mensal de transferências (um .zip por mês, sem chave de acesso)
 Regras:
   - "Prefeitura" = linhas cujo favorecido é a Administração Pública Municipal (FPM, Fundeb, SUS, merenda...).
   - "Outros" = demais favorecidos naquele município (associações de escola, entidades, órgãos).
-  - Comparação sempre dos MESMOS meses (janeiro até o último mês fechado) em cada ano.
-  - O mês em andamento (arquivo parcial) aparece à parte, nunca entra na comparação.
+  - Comparação sempre dos MESMOS meses (janeiro até o último mês COMPLETO) em cada ano.
+  - O Portal publica os meses aos poucos: o mês corrente e, às vezes, o anterior chegam incompletos.
+    Mês "completo" = soma nacional de pelo menos 60% da mediana dos 6 meses anteriores. Os demais ficam em
+    meta["pendentes"] e nunca entram na comparação.
 
 Gera public/data/repasses/ (valores em reais inteiros):
   <código UF>.json  {"uf", "m": {ibge: {"n": nome, "t": [prefeitura por mês], "o": [outros por mês],
@@ -70,10 +72,7 @@ def main() -> None:
     hoje = date.today()
     refs = meses_ate_hoje(hoje)
     n = len(refs)
-    # mês de referência = último mês FECHADO (o anterior ao mês corrente)
-    ref_ano, ref_mes = (hoje.year, hoje.month - 1) if hoje.month > 1 else (hoje.year - 1, 12)
-    ano_prev = ref_ano - 1
-    c.log(f"Contas Já - repasses federais ({refs[0]} a {refs[-1]}); comparação: janeiro a {ref_mes:02d} de {ref_ano} x {ano_prev}")
+    c.log(f"Contas Já - repasses federais ({refs[0]} a {refs[-1]})")
     casa = c.CasadorMunicipios()
     mun = c.ler_json(c.DADOS_PUBLICOS / "municipios.json", {}) or {}
     nomes = {m[0]: m[1] for m in mun.get("m", [])}
@@ -81,7 +80,8 @@ def main() -> None:
     T = defaultdict(lambda: [0.0] * n)
     O = defaultdict(lambda: [0.0] * n)
     F = defaultdict(lambda: defaultdict(lambda: [0.0] * n))
-    A = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0]))
+    ANO_A0 = hoje.year - 2
+    A = defaultdict(lambda: defaultdict(lambda: [0.0] * 36))     # só os 3 últimos anos, por mês
     FUNC, ACAO = {}, {}
     UF_T = defaultdict(lambda: [0.0] * n)
     UF_F = defaultdict(lambda: defaultdict(lambda: [0.0] * n))
@@ -123,8 +123,8 @@ def main() -> None:
                 F[cod][fid][i] += v
                 UF_T[uf][i] += v
                 UF_F[uf][fid][i] += v
-                if mes <= ref_mes and ano in (ref_ano, ano_prev):
-                    A[cod][acao][0 if ano == ano_prev else 1] += v
+                if ano >= ANO_A0:
+                    A[cod][acao][(ano - ANO_A0) * 12 + mes - 1] += v
             linhas_lidas += qtd
         c.log(f"   {ref}: {qtd:,} linhas")
         return True
@@ -152,7 +152,19 @@ def main() -> None:
     graves = [r for _, r in falhou if r != refs[-1]]
     if graves:
         raise RuntimeError(f"Meses sem arquivo: {graves}. Mantendo os dados anteriores.")
-    parcial = refs[-1] not in [r for _, r in falhou]
+    total_mes = [sum(v[i] for v in UF_T.values()) for i in range(n)]
+    ultimo_ok = None
+    for i in range(n - 1, -1, -1):
+        base = sorted(total_mes[max(0, i - 6):i])
+        if not base or total_mes[i] >= 0.6 * base[len(base) // 2]:
+            ultimo_ok = i
+            break
+    if ultimo_ok is None:
+        raise RuntimeError("Nenhum mês completo encontrado")
+    ref_ano, ref_mes = int(refs[ultimo_ok][:4]), int(refs[ultimo_ok][4:])
+    ano_prev = ref_ano - 1
+    pendentes = [f"{r[:4]}-{r[4:]}" for r in refs[ultimo_ok + 1:]]
+    c.log(f"   último mês completo: {ref_mes:02d}/{ref_ano}; pendentes: {pendentes}")
     if casa.faltando:
         c.log(f"   nomes sem código IBGE ({len(casa.faltando)}): {sorted(casa.faltando)[:12]}")
     c.log(f"   linhas aproveitadas: {linhas_lidas:,}; sem município: {sem_mun:,}")
@@ -170,7 +182,12 @@ def main() -> None:
             f = {fid: inteiro(v) for fid, v in F[cod].items() if any(v)} if cod in F else {}
             if f:
                 reg["f"] = f
-            a = {ac: [int(round(x[0])), int(round(x[1]))] for ac, x in A[cod].items() if any(x)} if cod in A else {}
+            a = {}
+            for ac, x in (A[cod].items() if cod in A else []):
+                pa = sum(x[(ano_prev - ANO_A0) * 12:(ano_prev - ANO_A0) * 12 + ref_mes])
+                at = sum(x[(ref_ano - ANO_A0) * 12:(ref_ano - ANO_A0) * 12 + ref_mes])
+                if pa or at:
+                    a[ac] = [int(round(pa)), int(round(at))]
             if a:
                 reg["a"] = a
             saida[str(cod)] = reg
@@ -182,10 +199,10 @@ def main() -> None:
     ufs_disp = sorted(set(meta_ant.get("ufs", [])) | set(ufs))
     c.salvar_json(SAIDA / "meta.json", {
         "coletado_em": gerado, "meses": [f"{r[:4]}-{r[4:]}" for r in refs], "ref_ano": ref_ano, "ref_mes": ref_mes,
-        "mes_parcial": f"{refs[-1][:4]}-{refs[-1][4:]}" if parcial and (hoje.year, hoje.month) == (int(refs[-1][:4]), int(refs[-1][4:])) else None,
+        "pendentes": pendentes,
         "ufs": ufs_disp, "funcoes": FUNC, "acoes": {k: v for k, v in ACAO.items()},
         "fonte": "Portal da Transparência (CGU), transferências do governo federal"})
-    c.resumo_github([f"Repasses federais: {refs[0]} a {refs[-1]}, comparação jan a {ref_mes:02d}, UFs {', '.join(ufs)}"])
+    c.resumo_github([f"Repasses federais: {refs[0]} a {refs[-1]}, comparação jan a {ref_mes:02d}/{ref_ano}, pendentes {pendentes}, UFs {', '.join(ufs)}"])
 
 
 if __name__ == "__main__":
